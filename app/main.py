@@ -26,6 +26,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Market Prices", lifespan=lifespan)
 
 
+@app.get("/")
+def index():
+    return RedirectResponse("/docs")
+
+
 @app.get("/auth/login")
 async def auth_login():
     return RedirectResponse(await sso.build_login_url())
