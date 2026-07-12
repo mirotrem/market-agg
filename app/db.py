@@ -4,6 +4,20 @@ import asyncpg
 
 from . import config
 
+# Numeric columns are coalesced to 0 in query_items rather than returned as null - text/
+# timestamp columns (type_name, last_update, history_updated_at) are left as null since 0
+# wouldn't mean anything for them.
+NUMERIC_COLUMNS = {
+    "max_buy",
+    "min_sell",
+    "buy_listed",
+    "sell_listed",
+    "volume_7d",
+    "volume_7d_min",
+    "volume_7d_max",
+    "weekly_movement",
+}
+
 ALLOWED_COLUMNS = [
     "type_id",
     "location_id",
@@ -340,7 +354,9 @@ async def query_items(
     name: str | None = None,
     location_id: int | None = None,
 ) -> list[dict]:
-    cols_sql = ", ".join(columns)
+    cols_sql = ", ".join(
+        f"COALESCE({c}, 0) AS {c}" if c in NUMERIC_COLUMNS else c for c in columns
+    )
     sql = f"SELECT {cols_sql} FROM item_stats"
     conditions = []
     params: list = []
