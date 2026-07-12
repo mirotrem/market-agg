@@ -60,7 +60,7 @@ services:
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:8000"
     ports:
-      - "192.168.200.240:8000:8000"
+      - "8000:8000"
     volumes:
       - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
     depends_on:
