@@ -13,8 +13,6 @@ NUMERIC_COLUMNS = {
     "buy_listed",
     "sell_listed",
     "volume_7d",
-    "volume_7d_min",
-    "volume_7d_max",
     "weekly_movement",
 }
 
@@ -28,8 +26,6 @@ ALLOWED_COLUMNS = [
     "sell_listed",
     "last_update",
     "volume_7d",
-    "volume_7d_min",
-    "volume_7d_max",
     "weekly_movement",
     "history_updated_at",
 ]
@@ -98,8 +94,6 @@ async def _create_tables(conn) -> None:
             sell_listed BIGINT,
             last_update TEXT,
             volume_7d BIGINT,
-            volume_7d_min BIGINT,
-            volume_7d_max BIGINT,
             weekly_movement DOUBLE PRECISION,
             history_updated_at TEXT,
             PRIMARY KEY (type_id, location_id)
@@ -117,32 +111,6 @@ async def _create_tables(conn) -> None:
             expires_at DOUBLE PRECISION
         )
         """
-    )
-    await conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS order_snapshots (
-            order_id BIGINT PRIMARY KEY,
-            location_id BIGINT NOT NULL,
-            type_id INTEGER NOT NULL,
-            volume_remain BIGINT NOT NULL,
-            last_seen_at TEXT NOT NULL
-        )
-        """
-    )
-    await conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS fill_events (
-            id BIGSERIAL PRIMARY KEY,
-            location_id BIGINT NOT NULL,
-            type_id INTEGER NOT NULL,
-            volume BIGINT NOT NULL,
-            confirmed INTEGER NOT NULL,
-            observed_at TEXT NOT NULL
-        )
-        """
-    )
-    await conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_fill_events_lookup ON fill_events (location_id, observed_at)"
     )
 
 
@@ -252,94 +220,6 @@ async def update_history(
             type_id,
             location_id,
         )
-
-
-async def apply_order_diff(location_id: int, current_orders: list[dict], now: str) -> None:
-    """Diff current_orders against the last-seen snapshot for this location to infer trade
-    volume, since ESI has no history endpoint for player structures.
-
-    - An order whose volume_remain dropped since last seen (but still exists) is a
-      *confirmed* partial fill for that difference - volume_remain cannot otherwise rise.
-    - An order that vanished entirely since last seen is *ambiguous*: it may have fully
-      filled, or the player may have just cancelled it. That's logged as an unconfirmed
-      ("possible") fill of its last-known volume_remain, never as confirmed.
-    """
-    async with get_conn() as conn, conn.transaction():
-        previous = {
-            row["order_id"]: (row["type_id"], row["volume_remain"])
-            for row in await conn.fetch(
-                "SELECT order_id, type_id, volume_remain FROM order_snapshots WHERE location_id = $1",
-                location_id,
-            )
-        }
-
-        seen_order_ids: set[int] = set()
-        fill_rows = []
-        snapshot_rows = []
-
-        for o in current_orders:
-            order_id = o["order_id"]
-            seen_order_ids.add(order_id)
-            prev = previous.get(order_id)
-            if prev is not None:
-                prev_type_id, prev_remain = prev
-                if o["volume_remain"] < prev_remain:
-                    fill_rows.append((location_id, o["type_id"], prev_remain - o["volume_remain"], 1, now))
-            snapshot_rows.append((order_id, location_id, o["type_id"], o["volume_remain"], now))
-
-        for order_id, (prev_type_id, prev_remain) in previous.items():
-            if order_id not in seen_order_ids:
-                fill_rows.append((location_id, prev_type_id, prev_remain, 0, now))
-
-        await conn.execute("DELETE FROM order_snapshots WHERE location_id = $1", location_id)
-        if snapshot_rows:
-            await conn.executemany(
-                "INSERT INTO order_snapshots (order_id, location_id, type_id, volume_remain, last_seen_at) "
-                "VALUES ($1, $2, $3, $4, $5)",
-                snapshot_rows,
-            )
-        if fill_rows:
-            await conn.executemany(
-                "INSERT INTO fill_events (location_id, type_id, volume, confirmed, observed_at) "
-                "VALUES ($1, $2, $3, $4, $5)",
-                fill_rows,
-            )
-
-
-async def recompute_volume_estimates(location_id: int, since: str) -> None:
-    """Recompute volume_7d_min (confirmed fills only) and volume_7d_max (confirmed +
-    ambiguous disappearances) for every tracked item at this location, from fill_events
-    observed since `since`. Items with no fill_events in the window are reset to 0 so the
-    trailing window actually shrinks over time instead of holding stale non-zero values."""
-    async with get_conn() as conn, conn.transaction():
-        rows = await conn.fetch(
-            """
-            SELECT type_id,
-                   SUM(CASE WHEN confirmed = 1 THEN volume ELSE 0 END) AS min_vol,
-                   SUM(volume) AS max_vol
-            FROM fill_events
-            WHERE location_id = $1 AND observed_at >= $2
-            GROUP BY type_id
-            """,
-            location_id,
-            since,
-        )
-        by_type = {r["type_id"]: (r["min_vol"] or 0, r["max_vol"] or 0) for r in rows}
-
-        active_type_ids = [
-            r["type_id"]
-            for r in await conn.fetch("SELECT type_id FROM item_stats WHERE location_id = $1", location_id)
-        ]
-        if active_type_ids:
-            await conn.executemany(
-                "UPDATE item_stats SET volume_7d_min = $1, volume_7d_max = $2 WHERE type_id = $3 AND location_id = $4",
-                [(*by_type.get(type_id, (0, 0)), type_id, location_id) for type_id in active_type_ids],
-            )
-
-
-async def prune_fill_events(before: str) -> None:
-    async with get_conn() as conn:
-        await conn.execute("DELETE FROM fill_events WHERE observed_at < $1", before)
 
 
 async def get_active_type_ids(location_id: int) -> list[int]:

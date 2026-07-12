@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from . import cache, config, db, esi_client, sso
 
@@ -96,19 +96,6 @@ async def _refresh_structure_orders(location_key: str, loc: dict) -> int:
     await db.upsert_order_stats(location_id, _rows_from_aggregate(by_type, names))
     if expires:
         await db.set_poll_state(state_key, expires)
-
-    # If this structure has opted into a dominant region's real history (history_region_id),
-    # refresh_location_history() handles volume/movement instead - the self-derived
-    # order-diff estimate below is only needed for structures without that opt-in.
-    if "history_region_id" not in loc:
-        # ESI has no history endpoint for structures, so volume is self-derived by diffing
-        # this snapshot against the last one: shrinking volume_remain on a surviving order is
-        # a confirmed partial fill; an order vanishing entirely is ambiguous (fill or cancel).
-        now = datetime.now(timezone.utc)
-        now_iso = now.isoformat()
-        await db.apply_order_diff(location_id, orders, now_iso)
-        await db.recompute_volume_estimates(location_id, (now - timedelta(days=7)).isoformat())
-        await db.prune_fill_events((now - timedelta(days=8)).isoformat())
 
     await cache.bump_generation(location_key)
     return len(by_type)

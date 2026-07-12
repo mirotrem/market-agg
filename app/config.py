@@ -23,12 +23,11 @@ ESI_ERROR_LIMIT_FLOOR = 20  # pause requests if remaining error budget drops bel
 # filtered by location_id. "structure" locations are player-owned citadels: they require
 # an authenticated character with docking access and are fetched directly by structure_id.
 #
-# ESI has no per-structure trade history endpoint. For most structures that means
-# volume_7d/weekly_movement stay null. But a structure that dominates its region's trade
-# can opt in to `history_region_id`: real ESI region history is then used for volume/movement
-# (same mechanism as a "station"), instead of the self-derived order-diff estimate
-# (volume_7d_min/volume_7d_max) - that's a judgment call per location, not automatic, since
-# the region history is only a good proxy when one venue genuinely dominates the region.
+# ESI has no per-structure trade history endpoint. A structure only gets volume/weekly
+# movement data if it opts in to `history_region_id` (real ESI region history, same mechanism
+# as a "station") - without it, volume_7d/weekly_movement just stay null for that location.
+# That's a per-location judgment call, not automatic: region history is only a valid proxy
+# when one venue genuinely dominates the region's trade.
 # C-J6MT dominates Insmother (10000009): confirmed its buy orders make up the entire regional
 # order book sample, and regional Tritanium volume (~1-5B/day) is implausible for ordinary
 # nullsec NPC-station trade, so it can only be coming from C-J6MT.
