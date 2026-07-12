@@ -13,8 +13,11 @@ USER_AGENT = "market-agg/0.1 (contact: mirotrem@gmail.com)"
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://market:market@localhost:5432/market")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
-ORDERS_POLL_SECONDS = 300  # region orders endpoint is cached ~5 min server-side
-HISTORY_POLL_SECONDS = 24 * 60 * 60  # history is cached ~1 day server-side
+# Defaults match ESI's own server-side cache windows (orders ~5 min, history ~1 day) - polling
+# faster than that just re-fetches identical cached data, so there's little reason to lower
+# these unless ESI's cache behavior changes.
+ORDERS_POLL_SECONDS = int(os.environ.get("ORDERS_POLL_SECONDS", 300))
+HISTORY_POLL_SECONDS = int(os.environ.get("HISTORY_POLL_SECONDS", 24 * 60 * 60))
 
 ESI_CONCURRENCY = 10
 ESI_ERROR_LIMIT_FLOOR = 20  # pause requests if remaining error budget drops below this
