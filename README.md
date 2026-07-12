@@ -31,6 +31,23 @@ Two kinds of location are supported (`app/config.py`):
 2. `docker-compose up -d --build`
 3. If tracking a structure, visit `/auth/login` in a browser with a character that has docking access, and add the structure to `config.LOCATIONS`.
 
+## Deploying to a new server
+
+Postgres starts empty on a new host — `db.init_db()` creates the schema automatically the moment `poller`/`api` start, but the *data* needs to repopulate. Rather than copying the database over, the recommended path is a cold start: let the poller refill itself from ESI, and authorize a **fresh** SSO token on the new host (don't reuse an old server's token/credentials).
+
+1. **Point the SSO app at the new host.** Edit the app at [developers.eveonline.com/applications](https://developers.eveonline.com/applications) and update its callback URL to `http://<host>:8000/auth/callback` (or `https://` if TLS is set up). This only affects *new* logins — existing refresh tokens elsewhere keep working regardless, since refreshing doesn't check the callback URL. If you'd rather keep multiple environments running independently long-term, register a separate SSO app per environment instead of sharing one.
+2. **Set up `.env`** from `.env.example` on the new host: matching `EVE_SSO_CALLBACK_URL`, and a **freshly generated** `POSTGRES_PASSWORD`/`DATABASE_URL` (don't reuse another environment's).
+3. **Bring the stack up**: `docker-compose up -d --build`.
+4. **Kick-start market data** instead of waiting on the schedule:
+   ```bash
+   curl -X POST http://<host>:8000/api/refresh/orders
+   curl -X POST http://<host>:8000/api/refresh/history
+   ```
+   (omitting `location=` refreshes every configured location at once). Station locations (e.g. Jita) populate fully here; structure locations will fail this step until step 5 is done — expected, not a bug.
+5. **Authorize the structure's SSO token.** Visit `http://<host>:8000/auth/login` in a browser, log in with a character that has docking access, approve the scopes. `/auth/callback` returns a small JSON confirmation once it's stored.
+6. **Refresh the structure** now that a token exists: `curl -X POST "http://<host>:8000/api/refresh/orders?location=<key>"`.
+7. **Verify**: `GET /api/locations` should show `authorized_character` populated, and `GET /api/prices?location=<key>&type_id=34` should return real data.
+
 ## API
 
 ```
@@ -45,7 +62,3 @@ POST /api/refresh/history?location=jita
 ## Scaling
 
 `docker-compose up -d --scale api=N`. Traefik here uses a static file provider (`traefik/dynamic.yml`) rather than Docker-socket auto-discovery — depending on the host's Docker version, the socket-based provider may or may not work (see comments in `docker-compose.yml`). If using the static file provider, the replica list in `traefik/dynamic.yml` needs to be updated by hand to match whatever `N` you scale to.
-
-## One-time migration tooling
-
-`scripts/migrate_sqlite_to_postgres.py` was used once to move this project's original SQLite-backed prototype into Postgres. Not needed for a fresh setup.

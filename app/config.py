@@ -10,8 +10,6 @@ STATION_ID = 60003760  # Jita IV - Moon 4 - Caldari Navy Assembly Plant
 ESI_BASE = "https://esi.evetech.net/latest"
 USER_AGENT = "market-agg/0.1 (contact: mirotrem@gmail.com)"
 
-DB_PATH = "data/market.db"  # legacy SQLite file; only read by scripts/migrate_sqlite_to_postgres.py now
-
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://market:market@localhost:5432/market")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
