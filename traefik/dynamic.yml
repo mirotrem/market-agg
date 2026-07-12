@@ -1,0 +1,18 @@
+http:
+  routers:
+    api:
+      rule: "PathPrefix(`/`)"
+      service: api
+      entryPoints:
+        - web
+  services:
+    api:
+      loadBalancer:
+        # A single "http://api:8000" entry does NOT round-robin across scaled replicas in
+        # practice - Traefik treats it as one backend and keeps a persistent connection to
+        # whichever IP it resolved first, since the real fix (Traefik's Docker-socket
+        # provider, auto-discovering replicas) is unusable on this host - see docker-compose.yml.
+        # Each replica's own container name is listed explicitly instead; this list has to
+        # be updated by hand to match however many replicas `--scale api=N` is running.
+        servers:
+          - url: "http://market-agg_api_1:8000"
