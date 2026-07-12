@@ -1,10 +1,31 @@
 http:
   routers:
+    api-refresh:
+      rule: "PathPrefix(`/api/refresh`)"
+      service: api
+      entryPoints:
+        - web
+      middlewares:
+        - local-only
+      priority: 10
     api:
       rule: "PathPrefix(`/`)"
       service: api
       entryPoints:
         - web
+      priority: 1
+  middlewares:
+    local-only:
+      ipAllowList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "::1/128"
+          # Docker's NAT rewrites a loopback-originated connection to a published port as
+          # coming from the bridge network's gateway, not literal 127.0.0.1 - confirmed via
+          # Traefik's access log (--accesslog=true) showing 172.21.0.1 for such a request.
+          # Adjust this if the compose project's network subnet ever changes
+          # (docker network inspect <project>_default).
+          - "172.21.0.1/32"
   services:
     api:
       loadBalancer:

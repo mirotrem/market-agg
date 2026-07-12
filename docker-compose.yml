@@ -59,6 +59,7 @@ services:
     command:
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:8000"
+      - "--accesslog=true"
     ports:
       - "8000:8000"
     volumes:
