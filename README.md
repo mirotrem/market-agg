@@ -8,7 +8,7 @@ Runs as five Docker Compose services:
 
 | Service | Role |
 |---|---|
-| `poller` | Singleton. Owns all ESI polling and every database write, on a schedule (orders every 5 min, history daily). Never scales — running more than one would double-hit ESI's rate limits and race on writes. |
+| `poller` | Singleton. Owns all ESI polling and every database write, on a schedule (orders every 15 min, history daily). Never scales — running more than one would double-hit ESI's rate limits and race on writes. |
 | `api` | Stateless and horizontally scalable. Serves `/api/prices` by reading Postgres, with a Redis-backed cache in front. |
 | `postgres` | Market data: current prices, quantities, and volume history per `(type_id, location_id)`. |
 | `redis` | Two jobs: response caching (invalidated instantly on writes via a per-location generation counter, not a TTL), and shared OAuth state so `/auth/login` and `/auth/callback` work correctly across scaled `api` replicas. |
@@ -19,8 +19,7 @@ Runs as five Docker Compose services:
 Two kinds of location are supported (`app/config.py`):
 
 - **`station`** — an NPC station (e.g. Jita 4-4). Public data: orders come from ESI's region-orders endpoint, and real 7-day volume/price-movement history is available directly from ESI.
-- **`structure`** — a player-owned citadel. Requires an EVE SSO-authenticated character with docking access (`/auth/login`) and is fetched via the authenticated structure-orders endpoint. ESI has **no** trade history endpoint for structures, so volume there is either:
-  - self-derived by diffing order-book snapshots between polls (`volume_7d_min`/`volume_7d_max` — a confirmed/ambiguous bracket, not a single true number), or
+- **`structure`** — a player-owned citadel. Requires an EVE SSO-authenticated character with docking access (`/auth/login`) and is fetched via the authenticated structure-orders endpoint. ESI has **no** trade history endpoint for structures:
   - if the structure dominates its region's trade enough to make regional history a reasonable proxy, opted in via `history_region_id` to use ESI's real region history instead (same mechanism as a station).
 
 ## Setup
