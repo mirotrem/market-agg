@@ -157,8 +157,8 @@ async def fetch_adjusted_prices(
 ) -> tuple[list[dict] | None, str | None]:
     """Fetch /markets/prices/ - a single unpaginated, global (not per-region) list of
     {type_id, adjusted_price, average_price} for every marketable type. Same known_expires
-    short-circuit as the other fetch_* functions; this endpoint's Expires is typically weeks
-    out, so in practice this almost always skips."""
+    short-circuit as the other fetch_* functions; this endpoint's data actually refreshes
+    hourly server-side (Last-Modified to Expires is exactly 1 hour)."""
     resp = await _send(client, "GET", "/markets/prices/")
     resp.raise_for_status()
     expires = resp.headers.get("Expires")

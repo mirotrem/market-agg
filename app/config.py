@@ -18,12 +18,13 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # these unless ESI's cache behavior changes.
 ORDERS_POLL_SECONDS = int(os.environ.get("ORDERS_POLL_SECONDS", 300))
 HISTORY_POLL_SECONDS = int(os.environ.get("HISTORY_POLL_SECONDS", 24 * 60 * 60))
-# /markets/prices/ (adjusted_price) is a single global endpoint whose Expires is typically
-# weeks out - polling daily is already far more often than it can actually change; the
-# known_expires check makes any extra polling here essentially free anyway.
-ADJUSTED_PRICES_POLL_SECONDS = int(os.environ.get("ADJUSTED_PRICES_POLL_SECONDS", 24 * 60 * 60))
-# /industry/systems/ (system cost indices) - same reasoning as ADJUSTED_PRICES_POLL_SECONDS.
-SYSTEM_COST_INDEX_POLL_SECONDS = int(os.environ.get("SYSTEM_COST_INDEX_POLL_SECONDS", 24 * 60 * 60))
+# /markets/prices/ (adjusted_price) and /industry/systems/ (system cost indices) both
+# actually refresh hourly server-side (confirmed via Last-Modified/Expires being exactly
+# 1 hour apart) - an earlier reading of "weeks out" was a stale, infrequently-hit edge-cache
+# copy, not the endpoints' real cache window. The known_expires check still makes any extra
+# polling beyond that essentially free.
+ADJUSTED_PRICES_POLL_SECONDS = int(os.environ.get("ADJUSTED_PRICES_POLL_SECONDS", 60 * 60))
+SYSTEM_COST_INDEX_POLL_SECONDS = int(os.environ.get("SYSTEM_COST_INDEX_POLL_SECONDS", 60 * 60))
 
 ESI_CONCURRENCY = 10
 ESI_ERROR_LIMIT_FLOOR = 20  # pause requests if remaining error budget drops below this
