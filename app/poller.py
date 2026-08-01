@@ -193,3 +193,35 @@ async def refresh_adjusted_prices() -> int:
         await db.set_poll_state(state_key, expires)
     await cache.bump_generation(ADJUSTED_PRICES_KEY)
     return len(rows)
+
+
+SYSTEM_COST_INDEX_KEY = "system_cost_indices"  # not a location - a single global ESI dataset
+
+
+def _flatten_cost_indices(raw_rows: list[dict]) -> list[dict]:
+    flat = []
+    for row in raw_rows:
+        entry = {"solar_system_id": row["solar_system_id"]}
+        for ci in row["cost_indices"]:
+            entry[ci["activity"]] = ci["cost_index"]
+        flat.append(entry)
+    return flat
+
+
+async def refresh_system_cost_indices() -> int:
+    state_key = "system_cost_indices_expires_at"
+    known_expires = await db.get_poll_state(state_key)
+    now = datetime.now(timezone.utc).isoformat()
+
+    async with esi_client.make_client() as client:
+        rows, expires = await esi_client.fetch_system_cost_indices(client, known_expires)
+        if rows is None:
+            logger.info("[system_cost_indices] cache unchanged (expires %s) - skipping refresh", expires)
+            return 0
+        logger.info("[system_cost_indices] fetched %d systems", len(rows))
+
+    await db.upsert_system_cost_indices(_flatten_cost_indices(rows), now)
+    if expires:
+        await db.set_poll_state(state_key, expires)
+    await cache.bump_generation(SYSTEM_COST_INDEX_KEY)
+    return len(rows)

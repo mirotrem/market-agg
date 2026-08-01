@@ -22,6 +22,8 @@ HISTORY_POLL_SECONDS = int(os.environ.get("HISTORY_POLL_SECONDS", 24 * 60 * 60))
 # weeks out - polling daily is already far more often than it can actually change; the
 # known_expires check makes any extra polling here essentially free anyway.
 ADJUSTED_PRICES_POLL_SECONDS = int(os.environ.get("ADJUSTED_PRICES_POLL_SECONDS", 24 * 60 * 60))
+# /industry/systems/ (system cost indices) - same reasoning as ADJUSTED_PRICES_POLL_SECONDS.
+SYSTEM_COST_INDEX_POLL_SECONDS = int(os.environ.get("SYSTEM_COST_INDEX_POLL_SECONDS", 24 * 60 * 60))
 
 ESI_CONCURRENCY = 10
 ESI_ERROR_LIMIT_FLOOR = 20  # pause requests if remaining error budget drops below this

@@ -167,6 +167,20 @@ async def fetch_adjusted_prices(
     return resp.json(), expires
 
 
+async def fetch_system_cost_indices(
+    client: httpx.AsyncClient, known_expires: str | None = None
+) -> tuple[list[dict] | None, str | None]:
+    """Fetch /industry/systems/ - a single unpaginated, global list of
+    {solar_system_id, cost_indices: [{activity, cost_index}, ...]} for every solar system.
+    Same known_expires short-circuit as fetch_adjusted_prices."""
+    resp = await _send(client, "GET", "/industry/systems/")
+    resp.raise_for_status()
+    expires = resp.headers.get("Expires")
+    if known_expires is not None and expires == known_expires:
+        return None, expires
+    return resp.json(), expires
+
+
 async def fetch_names(client: httpx.AsyncClient, ids: list[int]) -> dict[int, str]:
     """Resolve IDs to names via POST /universe/names/, batched at 1000 per call."""
     out: dict[int, str] = {}

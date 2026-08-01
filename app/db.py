@@ -30,6 +30,17 @@ ALLOWED_COLUMNS = [
     "history_updated_at",
 ]
 
+# The fixed set of activities ESI's /industry/systems/ reports a cost_index for.
+COST_INDEX_ACTIVITIES = [
+    "manufacturing",
+    "researching_time_efficiency",
+    "researching_material_efficiency",
+    "copying",
+    "invention",
+    "reaction",
+]
+SYSTEM_COST_INDEX_COLUMNS = ["solar_system_id", *COST_INDEX_ACTIVITIES, "updated_at"]
+
 _pool: asyncpg.Pool | None = None
 
 
@@ -118,6 +129,15 @@ async def _create_tables(conn) -> None:
             type_id INTEGER PRIMARY KEY,
             adjusted_price DOUBLE PRECISION,
             average_price DOUBLE PRECISION,
+            updated_at TEXT
+        )
+        """
+    )
+    await conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS system_cost_indices (
+            solar_system_id INTEGER PRIMARY KEY,
+            {", ".join(f"{a} DOUBLE PRECISION" for a in COST_INDEX_ACTIVITIES)},
             updated_at TEXT
         )
         """
@@ -273,6 +293,51 @@ async def get_adjusted_prices(type_ids: list[int] | None = None) -> list[dict]:
         params.append(type_ids)
         sql += " WHERE type_id = ANY($1::int[])"
     sql += " ORDER BY type_id"
+
+    async with get_conn() as conn:
+        return [dict(r) for r in await conn.fetch(sql, *params)]
+
+
+async def upsert_system_cost_indices(rows: list[dict], updated_at: str) -> None:
+    """rows: [{solar_system_id, manufacturing, researching_time_efficiency,
+    researching_material_efficiency, copying, invention, reaction}] - full replace each
+    time since ESI always returns the complete current set of solar systems."""
+    activity_cols = ", ".join(COST_INDEX_ACTIVITIES)
+    placeholders = ", ".join(f"${i}" for i in range(2, len(COST_INDEX_ACTIVITIES) + 3))
+    update_set = ", ".join(f"{a} = excluded.{a}" for a in COST_INDEX_ACTIVITIES)
+
+    async with get_conn() as conn, conn.transaction():
+        if rows:
+            await conn.executemany(
+                f"""
+                INSERT INTO system_cost_indices (solar_system_id, {activity_cols}, updated_at)
+                VALUES ($1, {placeholders})
+                ON CONFLICT (solar_system_id) DO UPDATE SET
+                    {update_set},
+                    updated_at = excluded.updated_at
+                """,
+                [
+                    (r["solar_system_id"], *(r.get(a) for a in COST_INDEX_ACTIVITIES), updated_at)
+                    for r in rows
+                ],
+            )
+            ids = [r["solar_system_id"] for r in rows]
+            await conn.execute(
+                "DELETE FROM system_cost_indices WHERE NOT (solar_system_id = ANY($1::int[]))",
+                ids,
+            )
+
+
+async def get_system_cost_indices(columns: list[str], solar_system_ids: list[int] | None = None) -> list[dict]:
+    cols_sql = ", ".join(
+        f"COALESCE({c}, 0) AS {c}" if c in COST_INDEX_ACTIVITIES else c for c in columns
+    )
+    sql = f"SELECT {cols_sql} FROM system_cost_indices"
+    params: list = []
+    if solar_system_ids:
+        params.append(solar_system_ids)
+        sql += " WHERE solar_system_id = ANY($1::int[])"
+    sql += " ORDER BY solar_system_id"
 
     async with get_conn() as conn:
         return [dict(r) for r in await conn.fetch(sql, *params)]

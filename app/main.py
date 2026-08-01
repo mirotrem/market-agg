@@ -183,6 +183,66 @@ async def adjusted_prices_post(body: AdjustedPricesRequest):
     return await _adjusted_prices_response(body.type_id)
 
 
+@app.get("/api/system-cost-index-columns")
+def list_system_cost_index_columns():
+    return {"columns": db.SYSTEM_COST_INDEX_COLUMNS}
+
+
+async def _system_cost_indices_response(columns: str, solar_system_ids: list[int] | None) -> dict:
+    requested = [c.strip() for c in columns.split(",") if c.strip()]
+    invalid = [c for c in requested if c not in db.SYSTEM_COST_INDEX_COLUMNS]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown column(s): {invalid}. Allowed: {db.SYSTEM_COST_INDEX_COLUMNS}",
+        )
+
+    # Same generation-bump cache pattern as _prices_response/_adjusted_prices_response, keyed
+    # under its own namespace since this isn't a location either.
+    generation = await cache.get_generation(poller.SYSTEM_COST_INDEX_KEY)
+    key_material = json.dumps([requested, sorted(solar_system_ids) if solar_system_ids else None])
+    cache_key = (
+        f"cache:data:{poller.SYSTEM_COST_INDEX_KEY}:{generation}:"
+        f"{hashlib.sha256(key_material.encode()).hexdigest()}"
+    )
+
+    cached = await cache.cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    rows = await db.get_system_cost_indices(requested, solar_system_ids)
+    result = {"count": len(rows), "columns": requested, "results": rows}
+    await cache.cache_set(cache_key, result)
+    return result
+
+
+@app.get("/api/system-cost-indices")
+async def system_cost_indices(
+    columns: str = Query(
+        ",".join(db.SYSTEM_COST_INDEX_COLUMNS),
+        description="Comma-separated list of columns. GET /api/system-cost-index-columns for the full list.",
+    ),
+    solar_system_id: str | None = Query(
+        None, description="One or more comma-separated solar_system_ids, e.g. 30000142,30020141"
+    ),
+):
+    """System cost indices from ESI's /industry/systems/ - a single global dataset (no
+    location), used for industry job cost calculations."""
+    return await _system_cost_indices_response(columns, _parse_type_id_param(solar_system_id))
+
+
+class SystemCostIndicesRequest(BaseModel):
+    columns: str = ",".join(db.SYSTEM_COST_INDEX_COLUMNS)
+    solar_system_id: list[int] | None = None
+
+
+@app.post("/api/system-cost-indices")
+async def system_cost_indices_post(body: SystemCostIndicesRequest):
+    """Same as GET /api/system-cost-indices, but takes solar_system_id as a JSON array in the
+    body - use this when the list is long enough to hit a client-side URL length limit."""
+    return await _system_cost_indices_response(body.columns, body.solar_system_id)
+
+
 @app.post("/api/refresh/orders")
 async def trigger_refresh_orders(location: str | None = Query(None, description="Omit to refresh all locations")):
     if location is None:
@@ -204,3 +264,8 @@ async def trigger_refresh_history(location: str | None = Query(None, description
 @app.post("/api/refresh/adjusted-prices")
 async def trigger_refresh_adjusted_prices():
     return {"adjusted_prices": await poller.refresh_adjusted_prices()}
+
+
+@app.post("/api/refresh/system-cost-indices")
+async def trigger_refresh_system_cost_indices():
+    return {"system_cost_indices": await poller.refresh_system_cost_indices()}

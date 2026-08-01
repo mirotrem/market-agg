@@ -45,12 +45,20 @@ async def main() -> None:
         seconds=config.ADJUSTED_PRICES_POLL_SECONDS,
         id="adjusted_prices",
     )
+    scheduler.add_job(
+        poller.refresh_system_cost_indices,
+        "interval",
+        seconds=config.SYSTEM_COST_INDEX_POLL_SECONDS,
+        id="system_cost_indices",
+    )
     scheduler.start()
     logger.info(
-        "poller service started (orders every %ss, history every %ss, adjusted prices every %ss)",
+        "poller service started (orders every %ss, history every %ss, adjusted prices every %ss, "
+        "system cost indices every %ss)",
         config.ORDERS_POLL_SECONDS,
         config.HISTORY_POLL_SECONDS,
         config.ADJUSTED_PRICES_POLL_SECONDS,
+        config.SYSTEM_COST_INDEX_POLL_SECONDS,
     )
 
     try:
