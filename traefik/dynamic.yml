@@ -22,10 +22,15 @@ http:
           - "::1/128"
           # Docker's NAT rewrites a loopback-originated connection to a published port as
           # coming from the bridge network's gateway, not literal 127.0.0.1 - confirmed via
-          # Traefik's access log (--accesslog=true) showing 172.21.0.1 for such a request.
-          # Adjust this if the compose project's network subnet ever changes
-          # (docker network inspect <project>_default).
-          - "172.21.0.1/32"
+          # Traefik's access log (--accesslog=true). That gateway IP isn't stable: a full
+          # stack recreation (not just a container restart) can reassign the bridge network
+          # to a different subnet entirely (observed firsthand: 172.21.0.0/16 -> 172.20.0.0/16
+          # across one recreate). Rather than chase the specific address every time, this
+          # allowlists the whole private range Docker's default bridge networks are drawn
+          # from (172.17.0.0/16 through 172.31.0.0/16) - a real internet attacker can't
+          # complete a TCP handshake with a spoofed private-range source anyway, since the
+          # return traffic has nowhere real to route back to.
+          - "172.16.0.0/12"
   services:
     api:
       loadBalancer:

@@ -18,6 +18,10 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # these unless ESI's cache behavior changes.
 ORDERS_POLL_SECONDS = int(os.environ.get("ORDERS_POLL_SECONDS", 300))
 HISTORY_POLL_SECONDS = int(os.environ.get("HISTORY_POLL_SECONDS", 24 * 60 * 60))
+# /markets/prices/ (adjusted_price) is a single global endpoint whose Expires is typically
+# weeks out - polling daily is already far more often than it can actually change; the
+# known_expires check makes any extra polling here essentially free anyway.
+ADJUSTED_PRICES_POLL_SECONDS = int(os.environ.get("ADJUSTED_PRICES_POLL_SECONDS", 24 * 60 * 60))
 
 ESI_CONCURRENCY = 10
 ESI_ERROR_LIMIT_FLOOR = 20  # pause requests if remaining error budget drops below this

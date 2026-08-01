@@ -146,6 +146,43 @@ async def jita_prices(
     return await _prices_response("jita", columns, _parse_type_id_param(type_id), name)
 
 
+async def _adjusted_prices_response(type_ids: list[int] | None) -> dict:
+    # Same generation-bump cache pattern as _prices_response, keyed under its own namespace
+    # since this isn't a location - it's ESI's single global /markets/prices/ dataset.
+    generation = await cache.get_generation(poller.ADJUSTED_PRICES_KEY)
+    key_material = json.dumps(sorted(type_ids) if type_ids else None)
+    cache_key = f"cache:data:{poller.ADJUSTED_PRICES_KEY}:{generation}:{hashlib.sha256(key_material.encode()).hexdigest()}"
+
+    cached = await cache.cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    rows = await db.get_adjusted_prices(type_ids)
+    result = {"count": len(rows), "results": rows}
+    await cache.cache_set(cache_key, result)
+    return result
+
+
+@app.get("/api/adjusted-prices")
+async def adjusted_prices(
+    type_id: str | None = Query(None, description="One or more comma-separated item type_ids, e.g. 34,35,36"),
+):
+    """adjusted_price/average_price from ESI's /markets/prices/ - a single global dataset (no
+    location), used for industry job cost calculations, not a tradeable market price."""
+    return await _adjusted_prices_response(_parse_type_id_param(type_id))
+
+
+class AdjustedPricesRequest(BaseModel):
+    type_id: list[int] | None = None
+
+
+@app.post("/api/adjusted-prices")
+async def adjusted_prices_post(body: AdjustedPricesRequest):
+    """Same as GET /api/adjusted-prices, but takes type_id as a JSON array in the body -
+    use this when the type_id list is long enough to hit a client-side URL length limit."""
+    return await _adjusted_prices_response(body.type_id)
+
+
 @app.post("/api/refresh/orders")
 async def trigger_refresh_orders(location: str | None = Query(None, description="Omit to refresh all locations")):
     if location is None:
@@ -162,3 +199,8 @@ async def trigger_refresh_history(location: str | None = Query(None, description
     if location not in config.LOCATIONS:
         raise HTTPException(status_code=400, detail=f"Unknown location {location!r}")
     return {location: await poller.refresh_location_history(location)}
+
+
+@app.post("/api/refresh/adjusted-prices")
+async def trigger_refresh_adjusted_prices():
+    return {"adjusted_prices": await poller.refresh_adjusted_prices()}

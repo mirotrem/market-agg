@@ -152,6 +152,21 @@ async def fetch_structure_info(client: httpx.AsyncClient, structure_id: int, acc
     return resp.json()
 
 
+async def fetch_adjusted_prices(
+    client: httpx.AsyncClient, known_expires: str | None = None
+) -> tuple[list[dict] | None, str | None]:
+    """Fetch /markets/prices/ - a single unpaginated, global (not per-region) list of
+    {type_id, adjusted_price, average_price} for every marketable type. Same known_expires
+    short-circuit as the other fetch_* functions; this endpoint's Expires is typically weeks
+    out, so in practice this almost always skips."""
+    resp = await _send(client, "GET", "/markets/prices/")
+    resp.raise_for_status()
+    expires = resp.headers.get("Expires")
+    if known_expires is not None and expires == known_expires:
+        return None, expires
+    return resp.json(), expires
+
+
 async def fetch_names(client: httpx.AsyncClient, ids: list[int]) -> dict[int, str]:
     """Resolve IDs to names via POST /universe/names/, batched at 1000 per call."""
     out: dict[int, str] = {}

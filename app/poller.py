@@ -171,3 +171,25 @@ async def refresh_all_orders() -> dict[str, int]:
 
 async def refresh_all_history() -> dict[str, int]:
     return {key: await refresh_location_history(key) for key in config.LOCATIONS}
+
+
+ADJUSTED_PRICES_KEY = "adjusted_prices"  # not a location - a single global ESI dataset
+
+
+async def refresh_adjusted_prices() -> int:
+    state_key = "adjusted_prices_expires_at"
+    known_expires = await db.get_poll_state(state_key)
+    now = datetime.now(timezone.utc).isoformat()
+
+    async with esi_client.make_client() as client:
+        rows, expires = await esi_client.fetch_adjusted_prices(client, known_expires)
+        if rows is None:
+            logger.info("[adjusted_prices] cache unchanged (expires %s) - skipping refresh", expires)
+            return 0
+        logger.info("[adjusted_prices] fetched %d types", len(rows))
+
+    await db.upsert_adjusted_prices(rows, now)
+    if expires:
+        await db.set_poll_state(state_key, expires)
+    await cache.bump_generation(ADJUSTED_PRICES_KEY)
+    return len(rows)

@@ -39,8 +39,19 @@ async def main() -> None:
 
     scheduler.add_job(poller.refresh_all_orders, "interval", seconds=config.ORDERS_POLL_SECONDS, id="orders")
     scheduler.add_job(poller.refresh_all_history, "interval", seconds=config.HISTORY_POLL_SECONDS, id="history")
+    scheduler.add_job(
+        poller.refresh_adjusted_prices,
+        "interval",
+        seconds=config.ADJUSTED_PRICES_POLL_SECONDS,
+        id="adjusted_prices",
+    )
     scheduler.start()
-    logger.info("poller service started (orders every %ss, history every %ss)", config.ORDERS_POLL_SECONDS, config.HISTORY_POLL_SECONDS)
+    logger.info(
+        "poller service started (orders every %ss, history every %ss, adjusted prices every %ss)",
+        config.ORDERS_POLL_SECONDS,
+        config.HISTORY_POLL_SECONDS,
+        config.ADJUSTED_PRICES_POLL_SECONDS,
+    )
 
     try:
         await asyncio.Event().wait()  # run forever

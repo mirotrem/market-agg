@@ -112,6 +112,16 @@ async def _create_tables(conn) -> None:
         )
         """
     )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS adjusted_prices (
+            type_id INTEGER PRIMARY KEY,
+            adjusted_price DOUBLE PRECISION,
+            average_price DOUBLE PRECISION,
+            updated_at TEXT
+        )
+        """
+    )
 
 
 async def get_poll_state(key: str) -> str | None:
@@ -226,6 +236,46 @@ async def get_active_type_ids(location_id: int) -> list[int]:
     async with get_conn() as conn:
         rows = await conn.fetch("SELECT type_id FROM item_stats WHERE location_id = $1", location_id)
         return [r["type_id"] for r in rows]
+
+
+async def upsert_adjusted_prices(rows: list[dict], updated_at: str) -> None:
+    """rows: [{type_id, adjusted_price, average_price}], straight from ESI's /markets/prices/
+    (a single global list, not per-location) - full replace each time since ESI always
+    returns the complete current set of marketable types."""
+    async with get_conn() as conn, conn.transaction():
+        if rows:
+            await conn.executemany(
+                """
+                INSERT INTO adjusted_prices (type_id, adjusted_price, average_price, updated_at)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (type_id) DO UPDATE SET
+                    adjusted_price = excluded.adjusted_price,
+                    average_price = excluded.average_price,
+                    updated_at = excluded.updated_at
+                """,
+                [(r["type_id"], r.get("adjusted_price"), r.get("average_price"), updated_at) for r in rows],
+            )
+            ids = [r["type_id"] for r in rows]
+            await conn.execute(
+                "DELETE FROM adjusted_prices WHERE NOT (type_id = ANY($1::int[]))",
+                ids,
+            )
+
+
+async def get_adjusted_prices(type_ids: list[int] | None = None) -> list[dict]:
+    sql = """
+        SELECT type_id, COALESCE(adjusted_price, 0) AS adjusted_price,
+               COALESCE(average_price, 0) AS average_price, updated_at
+        FROM adjusted_prices
+    """
+    params: list = []
+    if type_ids:
+        params.append(type_ids)
+        sql += " WHERE type_id = ANY($1::int[])"
+    sql += " ORDER BY type_id"
+
+    async with get_conn() as conn:
+        return [dict(r) for r in await conn.fetch(sql, *params)]
 
 
 async def query_items(
